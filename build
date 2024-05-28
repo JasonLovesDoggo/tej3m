@@ -1,2 +1,5 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
+
+set -eux
+
 cargo run --bin uno-blink
