@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+ravedude = "0.1.8"
+
 
 [[bin]]
 name = "tej3culm"
