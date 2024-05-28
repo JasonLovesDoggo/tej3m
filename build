@@ -1,5 +1,0 @@
-#!/usr/bin/env sh
-
-set -eux
-
-cargo run --bin uno-blink
