@@ -33,11 +33,34 @@ impl TrafficLight {
         }
     }
 
+    fn sync_with(&mut self, master: &TrafficLight) {
+        if master.green.is_set_high() {
+            self.green.set_low();
+            self.yellow.set_low();
+            self.red.set_high();
+        } else if master.yellow.is_set_high() {
+            self.green.set_low();
+            self.yellow.set_low();
+            self.red.set_high();
+        } else {
+            // red
+            if self.anim_timer <= 20 {
+                // set to yellow
+                self.green.set_low();
+                self.yellow.set_high();
+                self.red.set_low();
+            } else {
+                self.green.set_low();
+                self.yellow.set_high();
+                self.red.set_low();
+            }
+        }
+    }
+
     fn process(&mut self) {
         if self.anim_timer == 0xff {
             return;
         }
-
         match self.anim_timer {
             0 => {
                 self.green.set_low();
@@ -86,7 +109,6 @@ fn main() -> ! {
         pins.d5.into_output().downgrade(),
     );
 
-    
     let mut t2 = TrafficLight::new(
         pins.d10.into_output().downgrade(),
         pins.d9.into_output().downgrade(),
@@ -95,11 +117,9 @@ fn main() -> ! {
 
     let mut was_button_pressed = false; // init as false
 
-
     loop {
         let read = streetlight_ldr.analog_read(&mut adc);
         // uwriteln!(&mut serial, "Read {}   \r", read).unwrap_infallible();
-
 
         // Streetlight LED begins
         streetlight_led
@@ -108,16 +128,15 @@ fn main() -> ! {
 
         // End of streetlight LED
 
-
         let is_button_pressed = pedestrian_button.is_high();
         if !was_button_pressed && is_button_pressed {
             t1.force_speedup(); // it's only placed for the straight one
-            // t2.force_speedup();
+                                // t2.force_speedup();
         }
         was_button_pressed = is_button_pressed;
 
         t1.process();
-        t2.process();
+        t2.sync_with(&t1);
 
         delay_ms(50);
     }
