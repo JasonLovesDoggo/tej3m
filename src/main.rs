@@ -10,6 +10,11 @@ use arduino_hal::{
 use embedded_hal::digital::v2::OutputPin;
 use panic_halt as _;
 
+const YELLOW_TIME: u8 = 80;
+const RED_TIME: u8 = 100;
+const GREEN_TIME: u8 = 0;
+const RESET_TIME: u8 = (RED_TIME - (RED_TIME - YELLOW_TIME)) * 2; // ecodistant
+
 struct TrafficLight {
     red: Pin<Output, Dynamic>,
     yellow: Pin<Output, Dynamic>,
@@ -38,20 +43,15 @@ impl TrafficLight {
             self.green.set_low();
             self.yellow.set_low();
             self.red.set_high();
-        } else if master.yellow.is_set_high() {
-            self.green.set_low();
-            self.yellow.set_low();
-            self.red.set_high();
         } else {
-            // red
-            if self.anim_timer <= 20 {
-                // set to yellow
+            if master.anim_timer >= YELLOW_TIME {
+                // set to red
                 self.green.set_low();
-                self.yellow.set_high();
-                self.red.set_low();
+                self.yellow.set_low();
+                self.red.set_high();
             } else {
-                self.green.set_low();
-                self.yellow.set_high();
+                self.green.set_high();
+                self.yellow.set_low();
                 self.red.set_low();
             }
         }
@@ -62,20 +62,26 @@ impl TrafficLight {
             return;
         }
         match self.anim_timer {
-            0 => {
-                self.green.set_low();
-                self.yellow.set_high();
+            GREEN_TIME => {
+                self.green.set_high();
+                self.yellow.set_low();
+                self.red.set_low();
                 self.anim_timer += 1;
             }
-            20 => {
+            YELLOW_TIME => {
+                self.green.set_low();
+                self.yellow.set_high();
+                self.red.set_low();
+                self.anim_timer += 1;
+            }
+            RED_TIME => {
+                self.green.set_low();
                 self.yellow.set_low();
                 self.red.set_high();
                 self.anim_timer += 1;
             }
-            100 => {
-                self.red.set_low();
-                self.green.set_high();
-                self.anim_timer = 0;
+            RESET_TIME => {
+                self.anim_timer = GREEN_TIME;
             }
             _ => {
                 self.anim_timer += 1;
@@ -83,11 +89,10 @@ impl TrafficLight {
         }
     }
     fn force_speedup(&mut self) {
-        if self.anim_timer <= 20 {
-            self.anim_timer = 20;
-        } else if self.anim_timer <= 100 {
-            self.anim_timer = 100;
-        }
+        // if self.anim_timer > RED_TIME {
+        // return // don't speed up if it's not in red stage
+        // }
+        self.anim_timer = RESET_TIME - 5; // speed up 
     }
 }
 
@@ -109,11 +114,11 @@ fn main() -> ! {
         pins.d5.into_output().downgrade(),
     );
 
-    let mut t2 = TrafficLight::new(
-        pins.d10.into_output().downgrade(),
-        pins.d9.into_output().downgrade(),
-        pins.d8.into_output().downgrade(),
-    );
+    // let mut t2 = TrafficLight::new(
+    //     pins.d10.into_output().downgrade(),
+    //     pins.d9.into_output().downgrade(),
+    //     pins.d8.into_output().downgrade(),
+    // );
 
     let mut was_button_pressed = false; // init as false
 
@@ -135,8 +140,8 @@ fn main() -> ! {
         }
         was_button_pressed = is_button_pressed;
 
-        t1.process();
-        t2.sync_with(&t1);
+        t1.process(); // master (straight) traffic light process
+                      // t2.sync_with(&t1);
 
         delay_ms(50);
     }
