@@ -27,9 +27,8 @@ impl TrafficLight {
     fn new(
         red: Pin<Output, Dynamic>,
         yellow: Pin<Output, Dynamic>,
-        mut green: Pin<Output, Dynamic>,
+        green: Pin<Output, Dynamic>,
     ) -> Self {
-        green.set_high();
         Self {
             red,
             yellow,
@@ -39,16 +38,16 @@ impl TrafficLight {
     }
 
     fn sync_with(&mut self, master: &TrafficLight) {
-        if master.green.is_set_high() {
+        if master.green.is_set_high() || master.yellow.is_set_high() {
             self.green.set_low();
             self.yellow.set_low();
             self.red.set_high();
         } else {
-            if master.anim_timer >= YELLOW_TIME {
-                // set to red
+            self.green.set_high();
+            if master.anim_timer >= RESET_TIME - YELLOW_TIME {
                 self.green.set_low();
-                self.yellow.set_low();
-                self.red.set_high();
+                self.yellow.set_high();
+                self.red.set_low();
             } else {
                 self.green.set_high();
                 self.yellow.set_low();
@@ -89,10 +88,10 @@ impl TrafficLight {
         }
     }
     fn force_speedup(&mut self) {
-        // if self.anim_timer > RED_TIME {
-        // return // don't speed up if it's not in red stage
-        // }
-        self.anim_timer = RESET_TIME - 5; // speed up 
+        if self.anim_timer > RED_TIME {
+            return; // don't speed up if it's not in red stage
+        }
+        self.anim_timer = RESET_TIME - 5; // speed up
     }
 }
 
@@ -113,12 +112,13 @@ fn main() -> ! {
         pins.d4.into_output().downgrade(),
         pins.d5.into_output().downgrade(),
     );
+    t1.green.set_high(); // start with green
 
-    // let mut t2 = TrafficLight::new(
-    //     pins.d10.into_output().downgrade(),
-    //     pins.d9.into_output().downgrade(),
-    //     pins.d8.into_output().downgrade(),
-    // );
+    let mut t2 = TrafficLight::new(
+        pins.d10.into_output().downgrade(),
+        pins.d9.into_output().downgrade(),
+        pins.d8.into_output().downgrade(),
+    );
 
     let mut was_button_pressed = false; // init as false
 
@@ -136,12 +136,11 @@ fn main() -> ! {
         let is_button_pressed = pedestrian_button.is_high();
         if !was_button_pressed && is_button_pressed {
             t1.force_speedup(); // it's only placed for the straight one
-                                // t2.force_speedup();
         }
         was_button_pressed = is_button_pressed;
 
         t1.process(); // master (straight) traffic light process
-                      // t2.sync_with(&t1);
+        t2.sync_with(&t1);
 
         delay_ms(50);
     }
