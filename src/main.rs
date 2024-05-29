@@ -38,17 +38,18 @@ impl TrafficLight {
     }
 
     fn sync_with(&mut self, master: &TrafficLight) {
-        if master.green.is_set_high() || master.yellow.is_set_high() {
+        if master.green.is_set_high() || master.yellow.is_set_high() { // if master is green or yellow, slave is red
             self.green.set_low();
             self.yellow.set_low();
             self.red.set_high();
         } else {
-            self.green.set_high();
-            if master.anim_timer >= RESET_TIME - YELLOW_TIME {
+
+            // self.green.set_high();
+            if master.anim_timer >= RESET_TIME - YELLOW_TIME { // if we are RESET_TIME - YELLOW_TIME, we are in slave yellow stage
                 self.green.set_low();
                 self.yellow.set_high();
                 self.red.set_low();
-            } else {
+            } else { // else, we are in slave green stage 
                 self.green.set_high();
                 self.yellow.set_low();
                 self.red.set_low();
