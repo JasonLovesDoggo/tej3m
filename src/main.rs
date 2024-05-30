@@ -91,10 +91,10 @@ impl TrafficLight {
         }
     }
     fn force_speedup(&mut self) {
-        if self.anim_timer > RED_TIME {
+        if self.anim_timer < RED_TIME {
             return; // don't speed up if it's not in red stage
         }
-        self.anim_timer = RESET_TIME - 5; // speed up
+        self.anim_timer = RESET_TIME - 15; // speed up
     }
 }
 
