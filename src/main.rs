@@ -10,10 +10,10 @@ use arduino_hal::{
 use embedded_hal::digital::v2::OutputPin;
 use panic_halt as _;
 
-const YELLOW_TIME: u8 = 80;
+const YELLOW_TIME: u8 = 70;
 const RED_TIME: u8 = 100;
 const GREEN_TIME: u8 = 0;
-const RESET_TIME: u8 = (RED_TIME - (RED_TIME - YELLOW_TIME)) * 2; // ecodistant
+const RESET_TIME: u8 = RED_TIME * 2; // time for both lights should be the same
 
 struct TrafficLight {
     red: Pin<Output, Dynamic>,
@@ -38,18 +38,20 @@ impl TrafficLight {
     }
 
     fn sync_with(&mut self, master: &TrafficLight) {
-        if master.green.is_set_high() || master.yellow.is_set_high() { // if master is green or yellow, slave is red
+        if master.green.is_set_high() || master.yellow.is_set_high() {
+            // if master is green or yellow, slave is red
             self.green.set_low();
             self.yellow.set_low();
             self.red.set_high();
         } else {
-
-            // self.green.set_high();
-            if master.anim_timer >= RESET_TIME - YELLOW_TIME { // if we are RESET_TIME - YELLOW_TIME, we are in slave yellow stage
+            // on red
+            if master.anim_timer >= RESET_TIME - (RED_TIME - YELLOW_TIME) {
+                // if master is in red stage and we are the same distance from master yellow-red go to slave yellow
                 self.green.set_low();
                 self.yellow.set_high();
                 self.red.set_low();
-            } else { // else, we are in slave green stage 
+            } else {
+                // else, we are in slave green stage
                 self.green.set_high();
                 self.yellow.set_low();
                 self.red.set_low();
@@ -113,8 +115,6 @@ fn main() -> ! {
         pins.d4.into_output().downgrade(),
         pins.d5.into_output().downgrade(),
     );
-    t1.green.set_high(); // start with green
-
     let mut t2 = TrafficLight::new(
         pins.d10.into_output().downgrade(),
         pins.d9.into_output().downgrade(),
@@ -125,7 +125,6 @@ fn main() -> ! {
 
     loop {
         let read = streetlight_ldr.analog_read(&mut adc);
-        // uwriteln!(&mut serial, "Read {}   \r", read).unwrap_infallible();
 
         // Streetlight LED begins
         streetlight_led
