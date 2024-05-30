@@ -127,12 +127,10 @@ fn main() -> ! {
     loop {
         let read = streetlight_ldr.analog_read(&mut adc);
 
-        // Streetlight LED begins
         streetlight_led
             .set_state((read < 150).into())
             .unwrap_infallible();
 
-        // End of streetlight LED
 
         let is_button_pressed = pedestrian_button.is_high();
         if !was_button_pressed && is_button_pressed {
