@@ -6,6 +6,7 @@ use arduino_hal::{
     hal::port::Dynamic,
     port::{mode::Output, Pin},
     prelude::_unwrap_infallible_UnwrapInfallible,
+    simple_pwm::*,
 };
 use embedded_hal::digital::v2::OutputPin;
 use panic_halt as _;
@@ -104,9 +105,9 @@ fn main() -> ! {
     let dp = arduino_hal::Peripherals::take().unwrap();
     let mut adc = arduino_hal::Adc::new(dp.ADC, Default::default());
     let pins = arduino_hal::pins!(dp);
-    // let mut serial = arduino_hal::default_serial!(dp, pins, 57600);
-
+    let mut serial = arduino_hal::default_serial!(dp, pins, 57600);
     let streetlight_ldr = pins.a0.into_analog_input(&mut adc);
+    serial.write_byte(0);
     let mut streetlight_led = pins.d2.into_output().downgrade();
 
     let pedestrian_button = pins.d6.into_pull_up_input();
@@ -122,6 +123,11 @@ fn main() -> ! {
         pins.d8.into_output().downgrade(),
     );
 
+    let timer0 = Timer2Pwm::new(dp.TC2, Prescaler::Prescale64);
+    let mut servo = pins.d11.into_output().into_pwm(&timer0);
+
+    let mut servoUp: bool = false;
+    servo.enable();
     let mut was_button_pressed = false; // init as false
 
     loop {
@@ -131,7 +137,6 @@ fn main() -> ! {
             .set_state((read < 150).into())
             .unwrap_infallible();
 
-
         let is_button_pressed = pedestrian_button.is_high();
         if !was_button_pressed && is_button_pressed {
             t1.force_speedup(); // it's only placed for the straight one
@@ -140,7 +145,7 @@ fn main() -> ! {
 
         t1.process(); // master (straight) traffic light process
         t2.sync_with(&t1);
-
+        servo.set_duty(1);
         delay_ms(50);
     }
 }
