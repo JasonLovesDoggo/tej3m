@@ -10,11 +10,11 @@ use arduino_hal::{
 };
 use embedded_hal::digital::v2::OutputPin;
 use panic_halt as _;
+use ufmt::uwriteln;
 
-const YELLOW_TIME: u8 = 70;
+const YELLOW_TIME: u8 = 30;
 const RED_TIME: u8 = 100;
-const GREEN_TIME: u8 = 0;
-const RESET_TIME: u8 = RED_TIME * 2; // time for both lights should be the same
+const GREEN_TIME: u8 = 70;
 
 struct TrafficLight {
     red: Pin<Output, Dynamic>,
@@ -22,6 +22,7 @@ struct TrafficLight {
     green: Pin<Output, Dynamic>,
 
     anim_timer: u8,
+    anim_state: u8,
 }
 
 impl TrafficLight {
@@ -35,68 +36,76 @@ impl TrafficLight {
             yellow,
             green,
             anim_timer: 0,
+            anim_state: 0,
         }
     }
 
-    fn sync_with(&mut self, master: &TrafficLight) {
-        if master.green.is_set_high() || master.yellow.is_set_high() {
-            // if master is green or yellow, slave is red
-            self.green.set_low();
-            self.yellow.set_low();
-            self.red.set_high();
-        } else {
-            // on red
-            if master.anim_timer >= RESET_TIME - (RED_TIME - YELLOW_TIME) {
-                // if master is in red stage and we are the same distance from master yellow-red go to slave yellow
-                self.green.set_low();
-                self.yellow.set_high();
-                self.red.set_low();
-            } else {
-                // else, we are in slave green stage
-                self.green.set_high();
-                self.yellow.set_low();
-                self.red.set_low();
-            }
-        }
-    }
-
-    fn process(&mut self) {
-        if self.anim_timer == 0xff {
+    fn tick(&mut self) {
+        if self.anim_timer > 0 {
+            self.anim_timer -= 1;
             return;
         }
-        match self.anim_timer {
-            GREEN_TIME => {
+        
+        self.next();
+    }
+    fn next(&mut self) {
+        self.anim_state += 1;
+        if self.anim_state == 3{
+            self.anim_state = 0;
+        }
+        self.anim_timer = match self.anim_state {
+            0 => {
                 self.green.set_high();
-                self.yellow.set_low();
                 self.red.set_low();
-                self.anim_timer += 1;
+                GREEN_TIME
             }
-            YELLOW_TIME => {
-                self.green.set_low();
+            1 => {
                 self.yellow.set_high();
-                self.red.set_low();
-                self.anim_timer += 1;
-            }
-            RED_TIME => {
                 self.green.set_low();
-                self.yellow.set_low();
+                YELLOW_TIME
+            }
+            2 => {
                 self.red.set_high();
-                self.anim_timer += 1;
+                self.yellow.set_low();
+                RED_TIME
             }
-            RESET_TIME => {
-                self.anim_timer = GREEN_TIME;
+            _ => unreachable!(),
+        };
+    }
+    fn force_speedup_by(&mut self, mut speedup: u8) {
+        loop{
+            if self.anim_timer >= speedup {
+                self.anim_timer -= speedup;
+                break;
             }
-            _ => {
-                self.anim_timer += 1;
-            }
+            speedup -= self.anim_timer;
+            self.next();
         }
     }
-    fn force_speedup(&mut self) {
-        if self.anim_timer < RED_TIME {
-            self.anim_timer = RED_TIME - 30; // speed master (you can't set to sub 30 as master only triggers changes on exact anim_timer actions)
+}
+
+struct Timer {
+    prev_res: bool,
+    state: u8,
+    reset: u8,
+}
+impl Timer {
+    fn new(reset: u8) -> Self {
+        Self { prev_res: false, state: 0, reset }
+    }
+    fn tick(&mut self) -> Option<bool> {
+        let res = if self.state > 0 {
+            self.state -= 1;
+            true
         } else {
-            self.anim_timer = RESET_TIME - 30; // speed on slave
-        }
+            false
+        };
+        let changed = self.prev_res != res;
+        self.prev_res = res;
+        changed.then_some(res)
+    }
+    fn pulse(&mut self) {
+        self.state = self.reset;
     }
 }
 
@@ -107,8 +116,12 @@ fn main() -> ! {
     let pins = arduino_hal::pins!(dp);
     let mut serial = arduino_hal::default_serial!(dp, pins, 57600);
     let streetlight_ldr = pins.a0.into_analog_input(&mut adc);
-    serial.write_byte(0);
     let mut streetlight_led = pins.d2.into_output().downgrade();
+    let mut gate_pht = pins.a5.into_analog_input(&mut adc);
+    let timer0 = Timer2Pwm::new(dp.TC2, Prescaler::Prescale64);
+    let mut gate_servo = pins.d11.into_output().into_pwm(&timer0);
+    let mut gate_servo_motion_timer = Timer::new(10);
+    let mut gate_timer = Timer::new(40);
 
     let pedestrian_button = pins.d6.into_pull_up_input();
 
@@ -122,30 +135,53 @@ fn main() -> ! {
         pins.d9.into_output().downgrade(),
         pins.d8.into_output().downgrade(),
     );
+    t2.anim_timer = 100;
 
-    let timer0 = Timer2Pwm::new(dp.TC2, Prescaler::Prescale64);
-    let mut servo = pins.d11.into_output().into_pwm(&timer0);
-
-    let mut servoUp: bool = false;
-    servo.enable();
     let mut was_button_pressed = false; // init as false
 
     loop {
-        let read = streetlight_ldr.analog_read(&mut adc);
+        let streetlight_read = streetlight_ldr.analog_read(&mut adc);
+        let gate_read = gate_pht.analog_read(&mut adc);
 
-        streetlight_led
-            .set_state((read < 150).into())
-            .unwrap_infallible();
+        if gate_read > 100 {
+            gate_timer.pulse();
+        }
+
+        uwriteln!(&mut serial, "gate {}", gate_read).unwrap_infallible();
+
+        // streetlight_led
+        //     .set_state((streetlight_read < 150).into())
+        //     .unwrap_infallible();
 
         let is_button_pressed = pedestrian_button.is_high();
         if !was_button_pressed && is_button_pressed {
-            t1.force_speedup(); // it's only placed for the straight one
+            t2.force_speedup_by(50);
+            t1.force_speedup_by(50);
         }
         was_button_pressed = is_button_pressed;
 
-        t1.process(); // master (straight) traffic light process
-        t2.sync_with(&t1);
-        servo.set_duty(1);
+        // gate_servo.
+
+        t1.tick();
+        t2.tick();
+        if let Some(res) = gate_timer.tick() {
+            gate_servo_motion_timer.pulse();
+            if res {
+                uwriteln!(&mut serial, "gate opened").unwrap_infallible();
+                gate_servo.set_duty(250);
+            } else {
+                uwriteln!(&mut serial, "gate closed").unwrap_infallible();
+                gate_servo.set_duty(100);
+            }
+        }
+        if let Some(res) = gate_servo_motion_timer.tick() {
+            if res {
+                gate_servo.enable();
+            } else {
+                gate_servo.disable();
+            }
+        }
+
         delay_ms(50);
     }
 }
