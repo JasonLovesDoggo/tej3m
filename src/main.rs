@@ -1,3 +1,8 @@
+// Authors: Jason Cameron & Colin Cai
+// Date: Mid May-Mid June
+// Teacher: Mr Wong 
+// Course: TEJ3M
+// Description: This program controls a simulated intersection which includes automatic street lights, a parking lot with an automatic gate & a full extendable traffic lights.
 #![no_std]
 #![no_main]
 
